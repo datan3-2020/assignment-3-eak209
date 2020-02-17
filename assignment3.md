@@ -1,7 +1,7 @@
 Statistical assignment 3
 ================
-\[add your name here\] \[add your candidate number here - mandatory\]
-\[add date here\]
+Emilia Koronbowicz 143801
+17/02/2020
 
 In this assignment we will explore political interest (*vote6*) and how it changes over time.
 
