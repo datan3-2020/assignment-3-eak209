@@ -6,18 +6,19 @@ output: github_document
 ---
 
 ```{r setup, include=FALSE}
-# Please note these options.
-# This tells R Markdown that we want to show code in the output document.
+
 knitr::opts_chunk$set(echo = TRUE)
-# Switching off messages in the output document. 
+
 knitr::opts_chunk$set(message = FALSE)
-# Switching on caching to make things faster (don't commit cache files on Github).
+
 knitr::opts_chunk$set(cache = TRUE)
 ```
 
 In this assignment we will explore political interest (*vote6*) and how it changes over time.
 
 ## Read data
+install.packages("data.table")
+
 
 First we want to read and join the data for the first 7 waves of the Understanding Society. (Wave 8 does not have a variable for political interest). We only want five variables: personal identifier, sample origin, sex, age and political interest. It is tedious to join all the seven waves manually, and it makes sense to use a loop in this case. Since you don't yet know about iteration I'll provide the code for you; please see the explanation of the code here: http://abessudnov.net/dataanalysis3/iteration.html.
 
@@ -27,34 +28,30 @@ The only thing you need to do for this code to work on your computer is to provi
 library(tidyverse)
 library(data.table)
 
-# data.table is faster compared to readr so we'll use it in this case (the function fread()). You need to install this package first to be able to run this code.
 
-# create a vector with the file names and paths
 
-files <- dir(
-             # Select the folder where the files are stored.
-             "[add your path here]",
-             # Tell R which pattern you want present in the files it will display.
+
+
+
+
+files <- dir("/Users/emiliakorobowicz/Desktop/DataScience3/EmilysRepo/NewRepo/Data/UKDA-6614-tab/tab/",
              pattern = "indresp",
-             # We want this process to repeat through the entire folder.
              recursive = TRUE,
-             # And finally want R to show us the entire file path, rather than just
-             # the names of the individual files.
              full.names = TRUE)
 
-# Select only files from the UKHLS.
+
 files <- files[stringr::str_detect(files, "ukhls")]
 files
 
-# create a vector of variable names
+
 vars <- c("memorig", "sex_dv", "age_dv", "vote6")
 
 for (i in 1:7) {
-        # Create a vector of the variables with the correct prefix.
+        
         varsToSelect <- paste(letters[i], vars, sep = "_")
-        # Add pidp to this vector (no prefix for pidp)
+       
         varsToSelect <- c("pidp", varsToSelect)
-        # Now read the data. 
+      
         data <- fread(files[i], select = varsToSelect)
         if (i == 1) {
                 all7 <- data  
@@ -62,7 +59,7 @@ for (i in 1:7) {
         else {
                 all7 <- full_join(all7, data, by = "pidp")
         }
-        # Now we can remove data to free up the memory.
+        
         rm(data)
 } 
 
@@ -70,11 +67,19 @@ for (i in 1:7) {
 
 ## Reshape data (20 points)
 
+write.csv(all7, "all7.csv")
+
 Now we have got the data from all 7 waves in the same data frame **all7** in the wide format. Note that the panel is unbalanced, i.e. we included all people who participated in at least one wave of the survey. Reshape the data to the long format. The resulting data frame should have six columns for six variables.
 
 ```{r}
-Long <- all7 %>%
-  ...
+Long <- all7 %>% reshape(idvar = "pidp", direction = "long", 
+                         v.names = c("memorig", "sex_dv", "age_dv", "vote6"),
+                         times = letters[1:7],
+                         varying = list(grep("memorig", names(all7), value = TRUE), 
+                                        grep("sex_dv", names(all7), value = TRUE),
+                                        grep("age_dv", names(all7), value = TRUE), 
+                                        grep("vote6", names(all7), value = TRUE)))
+  
 Long
 ```
 
@@ -83,15 +88,13 @@ Long
 Now we want to filter the data keeping only respondents from the original UKHLS sample for Great Britain (memorig == 1). We also want to clean the variables for sex (recoding it to "male" or "female") and political interest (keeping the values from 1 to 4 and coding all negative values as missing). Tabulate *sex* and *vote6* to make sure your recodings were correct. 
 
 ```{r}
-Long <- Long %>%
-        filter(...) %>%
-        mutate(sex_dv = ...) %>%
-        mutate(vote6 = ...)
+Long <- Long %>% 
+    filter(memorig == 1) %>%
+    mutate(sex_dv = recode(sex_dv, "1" = "Male", "2" = "Female")) %>% 
+    mutate(vote6 = ifelse(vote6 < 0, NA, vote6))
 
-Long %>%
-        ...
-Long %>%
-        ...
+table(Long$sex_dv, exclude = NULL)
+table(Long$vote6, exclude = NULL)
 
 ```
 
@@ -100,8 +103,8 @@ Long %>%
 Political interest is an ordinal variable, but we will treat it as interval and calculate mean political interest for men and women in each wave.
 
 ```{r}
-meanVote6 <- Long %>%
-        ...
+meanVote6 <- subset(Long, !is.na(sex_dv)) %>% group_by(sex_dv, time)  %>% summarise(mean = mean(na.omit(vote6)))
+
         
 meanVote6
 ```
@@ -120,8 +123,8 @@ In the cells of this table you should have mean political interest by sex and wa
 Write a short interpretation of your findings.
 
 ```{r}
-meanVote6 %>%
-        ...
+as.data.frame(meanVote6) %>% reshape(idvar = "sex_dv", timevar = "time", direction = "wide")
+
 ```
 
 ## Estimate stability of political interest (30 points)
@@ -147,6 +150,38 @@ Write the R code that does the following.
 5. Write a short interpretation of your findings.
 
 ```{r}
-...
+respondents_NA <- Long %>% group_by(pidp) %>% summarise(no_missing = sum(!is.na(vote6)))
+keep_respondents <- subset(respondents_NA, no_missing == 7)
+df <- subset(Long, pidp %in% keep_respondents$pidp &
+                   !is.na(sex_dv) & !is.na(age_dv))
+
+delta <- df %>% group_by(pidp) %>% 
+    summarise(delta = sum(abs(vote6[seq(2, length(vote6), 1)] - vote6[seq(1, length(vote6) -1, 1)])))
+
+delta <- inner_join(delta, unique(df[, c("pidp", "sex_dv")]), by = "pidp")
+
+delta %>% group_by(sex_dv) %>% summarise(mean(delta))
+
+df_w1 <- subset(df, time == "a")[, c("pidp", "age_dv")]
+delta_w1 <- inner_join(delta, df_w1, by = "pidp")
+delta_w1_age <- as.data.frame(delta_w1 %>% group_by(age_dv) %>% summarise(mean_delta = mean(delta)))
+ggplot(delta_w1_age, aes(age_dv, mean_delta)) + geom_smooth() + xlab("Age") + ylab("Mean delta")
+
 
 ```
+
+
+
+Interpretation:
+
+Both men and women have similar levels of consistency in their levels of political interest. For women, it is 2.49 and for men, it is 2.52 (so, to be precise male are only marginally more volatile).
+
+In terms of the relation between age and the level of consistency in the respondents' levels of political interest (delta), there are two noticeable findings: firstly, delta exponentially increases for the respondents above 50 years of age. Older people (above 50) are more likely to change their level of interest in politics Secondly, before the age of 50, the mean delta is essentially stable. Thus, those below the age of 50 retain a similar level of interest in politics.
+
+In other words, as people get older there is an increase in instability of political interest.
+
+
+
+
+
+
